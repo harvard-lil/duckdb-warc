@@ -1,4 +1,9 @@
-#![warn(clippy::all, nonstandard_style, rust_2018_idioms)]
+#![warn(
+    clippy::all,
+    nonstandard_style,
+    rust_2018_idioms,
+    rust_2021_compatibility
+)]
 
 pub mod schema;
 
