@@ -14,7 +14,7 @@ use std::{
     error::Error,
     sync::atomic::{AtomicBool, Ordering},
 };
-use warc::WarcReader;
+use warc::{BufferedBody, Error as WarcError, Record, WarcReader};
 
 use crate::schema::WARC_FIELDS;
 
@@ -34,7 +34,7 @@ impl VTab for ReadWarcVTab {
     type InitData = ReadWarcInitData;
     type BindData = ReadWarcBindData;
 
-    fn bind(bind: &BindInfo) -> Result<Self::BindData, Box<dyn std::error::Error>> {
+    fn bind(bind: &BindInfo) -> Result<Self::BindData, Box<dyn Error>> {
         WARC_FIELDS.iter().for_each(|field| {
             let field_type = match &field.field_type {
                 LogicalTypeId::Varchar => LogicalTypeHandle::from(LogicalTypeId::Varchar),
@@ -50,7 +50,7 @@ impl VTab for ReadWarcVTab {
         Ok(ReadWarcBindData { filepath })
     }
 
-    fn init(_: &InitInfo) -> Result<Self::InitData, Box<dyn std::error::Error>> {
+    fn init(_: &InitInfo) -> Result<Self::InitData, Box<dyn Error>> {
         Ok(ReadWarcInitData {
             done: AtomicBool::new(false),
         })
@@ -59,18 +59,27 @@ impl VTab for ReadWarcVTab {
     fn func(
         func: &TableFunctionInfo<Self>,
         output: &mut DataChunkHandle,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<(), Box<dyn Error>> {
         let init_data = func.get_init_data();
         let bind_data = func.get_bind_data();
 
         if init_data.done.swap(true, Ordering::Relaxed) {
             output.set_len(0);
         } else {
-            let mut records = Vec::new();
-            let reader = WarcReader::from_path(&bind_data.filepath)?;
-            for record in reader.iter_records() {
-                records.push(record?);
-            }
+            let records = match &bind_data.filepath {
+                filepath if filepath.to_lowercase().ends_with(".gz") => {
+                    let reader = WarcReader::from_path_gzip(&filepath)?;
+                    reader
+                        .iter_records()
+                        .collect::<Result<Vec<Record<BufferedBody>>, WarcError>>()?
+                }
+                filepath => {
+                    let reader = WarcReader::from_path(&filepath)?;
+                    reader
+                        .iter_records()
+                        .collect::<Result<Vec<Record<BufferedBody>>, WarcError>>()?
+                }
+            };
 
             for (record_index, record) in records.iter().enumerate() {
                 for (field_index, field) in WARC_FIELDS.iter().enumerate() {
