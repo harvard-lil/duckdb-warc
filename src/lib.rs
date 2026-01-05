@@ -5,6 +5,7 @@
     rust_2021_compatibility
 )]
 
+pub mod loader;
 pub mod schema;
 
 use duckdb::{
@@ -19,8 +20,8 @@ use std::{
     error::Error,
     sync::atomic::{AtomicBool, Ordering},
 };
-use warc::{BufferedBody, Error as WarcError, Record, WarcReader};
 
+use crate::loader::{Compression, Loader};
 use crate::schema::WARC_FIELDS;
 
 #[repr(C)]
@@ -71,20 +72,15 @@ impl VTab for ReadWarcVTab {
         if init_data.done.swap(true, Ordering::Relaxed) {
             output.set_len(0);
         } else {
-            let records = match &bind_data.filepath {
-                filepath if filepath.to_lowercase().ends_with(".gz") => {
-                    let reader = WarcReader::from_path_gzip(&filepath)?;
-                    reader
-                        .iter_records()
-                        .collect::<Result<Vec<Record<BufferedBody>>, WarcError>>()?
-                }
-                filepath => {
-                    let reader = WarcReader::from_path(&filepath)?;
-                    reader
-                        .iter_records()
-                        .collect::<Result<Vec<Record<BufferedBody>>, WarcError>>()?
-                }
+            let compression = match &bind_data.filepath {
+                filepath if filepath.to_lowercase().ends_with(".gz") => Compression::Gzip,
+                _ => Compression::None,
             };
+            let loader = Loader {
+                filepath: &bind_data.filepath,
+                compression,
+            };
+            let records = loader.read()?;
 
             for (record_index, record) in records.iter().enumerate() {
                 for (field_index, field) in WARC_FIELDS.iter().enumerate() {
