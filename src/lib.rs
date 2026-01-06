@@ -42,13 +42,8 @@ impl VTab for ReadWarcVTab {
 
     fn bind(bind: &BindInfo) -> Result<Self::BindData, Box<dyn Error>> {
         WARC_FIELDS.iter().for_each(|field| {
-            let field_type = match &field.field_type {
-                LogicalTypeId::Varchar => LogicalTypeHandle::from(LogicalTypeId::Varchar),
-                LogicalTypeId::Integer => LogicalTypeHandle::from(LogicalTypeId::Integer),
-                LogicalTypeId::Timestamp => LogicalTypeHandle::from(LogicalTypeId::Timestamp),
-                _ => LogicalTypeHandle::from(LogicalTypeId::Varchar),
-            };
-            bind.add_result_column(field.name, field_type)
+            let field_type_handle = field.get_field_type_handle();
+            bind.add_result_column(field.name, field_type_handle)
         });
         bind.add_result_column("body", LogicalTypeHandle::from(LogicalTypeId::Blob));
 

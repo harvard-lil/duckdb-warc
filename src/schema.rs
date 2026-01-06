@@ -1,4 +1,4 @@
-use duckdb::core::LogicalTypeId;
+use duckdb::core::{LogicalTypeHandle, LogicalTypeId};
 use warc::WarcHeader;
 
 #[derive(Debug)]
@@ -6,6 +6,17 @@ pub struct Field {
     pub name: &'static str,
     pub header: WarcHeader,
     pub field_type: LogicalTypeId,
+}
+
+impl Field {
+    pub fn get_field_type_handle(&self) -> LogicalTypeHandle {
+        match self.field_type {
+            LogicalTypeId::Varchar => LogicalTypeHandle::from(LogicalTypeId::Varchar),
+            LogicalTypeId::Integer => LogicalTypeHandle::from(LogicalTypeId::Integer),
+            LogicalTypeId::Timestamp => LogicalTypeHandle::from(LogicalTypeId::Timestamp),
+            _ => LogicalTypeHandle::from(LogicalTypeId::Varchar),
+        }
+    }
 }
 
 pub static WARC_FIELDS: &[Field] = &[
