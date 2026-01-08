@@ -9,12 +9,11 @@ pub mod loader;
 pub mod schema;
 
 use duckdb::{
-    core::{DataChunkHandle, Inserter, LogicalTypeHandle, LogicalTypeId},
+    core::{DataChunkHandle, LogicalTypeHandle, LogicalTypeId},
     vtab::{BindInfo, InitInfo, TableFunctionInfo, VTab},
     Connection, Result,
 };
 use duckdb_loadable_macros::duckdb_entrypoint_c_api;
-use jiff;
 use libduckdb_sys as ffi;
 use std::{
     error::Error,
@@ -76,37 +75,7 @@ impl VTab for ReadWarcVTab {
                 compression,
             };
             let records = loader.read()?;
-
-            for (record_index, record) in records.iter().enumerate() {
-                for (field_index, field) in WARC_FIELDS.iter().enumerate() {
-                    let mut column_vector = output.flat_vector(field_index);
-                    match record.header(field.header.clone()) {
-                        Some(value) => match field.field_type {
-                            LogicalTypeId::Varchar => {
-                                column_vector.insert(record_index, &value.to_string());
-                            }
-                            LogicalTypeId::Integer => {
-                                let slice = column_vector.as_mut_slice::<u32>();
-                                slice[record_index] = value.parse::<u32>()?;
-                            }
-                            LogicalTypeId::Timestamp => {
-                                let slice = column_vector.as_mut_slice::<i64>();
-                                let timestamp: jiff::Timestamp = value.parse()?;
-                                slice[record_index] = timestamp.as_microsecond();
-                            }
-                            _ => {
-                                column_vector.set_null(record_index);
-                            }
-                        },
-                        None => {
-                            column_vector.set_null(record_index);
-                        }
-                    }
-                }
-                let body_vector = output.flat_vector(WARC_FIELDS.len());
-                body_vector.insert(record_index, record.body());
-                output.set_len(records.len());
-            }
+            Loader::insert_records(records, output)?;
         }
 
         Ok(())
