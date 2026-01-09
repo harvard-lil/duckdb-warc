@@ -2,33 +2,37 @@ use duckdb::{
     core::{DataChunkHandle, Inserter, LogicalTypeId},
     Result,
 };
+use glob::glob;
 use jiff;
-use std::error::Error;
+use std::{error::Error, path::PathBuf};
 use warc::{BufferedBody, Error as WarcError, Record, WarcReader};
 
 use crate::schema::WARC_FIELDS;
 
-pub enum Compression {
-    None,
-    Gzip,
-}
-
 pub struct Loader<'a> {
-    pub filepath: &'a String,
-    pub compression: Compression,
+    pub pattern: &'a String,
 }
 
 impl<'a> Loader<'a> {
-    pub fn read(&self) -> Result<Vec<Record<BufferedBody>>, WarcError> {
-        match self.compression {
-            Compression::None => {
-                let reader = WarcReader::from_path(&self.filepath)
-                    .map_err(|error| WarcError::ReadData(error))?;
+    pub fn parse_filepaths(&self) -> Result<Vec<PathBuf>, Box<dyn Error>> {
+        let filepaths = match self.pattern {
+            pattern if pattern.contains(|char| "*?[".contains(char)) => glob(pattern)?
+                .filter_map(Result::ok)
+                .collect::<Vec<PathBuf>>(),
+            _ => vec![PathBuf::from(self.pattern)],
+        };
+
+        Ok(filepaths)
+    }
+
+    pub fn read_file(filepath: &PathBuf) -> Result<Vec<Record<BufferedBody>>, WarcError> {
+        match filepath.extension() {
+            Some(ext) if ext == "gz" => {
+                let reader = WarcReader::from_path_gzip(filepath).map_err(WarcError::ReadData)?;
                 reader.iter_records().collect()
             }
-            Compression::Gzip => {
-                let reader = WarcReader::from_path_gzip(&self.filepath)
-                    .map_err(|error| WarcError::ReadData(error))?;
+            _ => {
+                let reader = WarcReader::from_path(filepath).map_err(WarcError::ReadData)?;
                 reader.iter_records().collect()
             }
         }

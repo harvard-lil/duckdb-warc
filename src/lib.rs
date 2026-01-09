@@ -19,8 +19,9 @@ use std::{
     error::Error,
     sync::atomic::{AtomicBool, Ordering},
 };
+use warc::{BufferedBody, Record};
 
-use crate::loader::{Compression, Loader};
+use crate::loader::Loader;
 use crate::schema::WARC_FIELDS;
 
 #[repr(C)]
@@ -66,15 +67,15 @@ impl VTab for ReadWarcVTab {
         if init_data.done.swap(true, Ordering::Relaxed) {
             output.set_len(0);
         } else {
-            let compression = match &bind_data.filepath {
-                filepath if filepath.to_lowercase().ends_with(".gz") => Compression::Gzip,
-                _ => Compression::None,
-            };
             let loader = Loader {
-                filepath: &bind_data.filepath,
-                compression,
+                pattern: &bind_data.filepath,
             };
-            let records = loader.read()?;
+            let filepaths = loader.parse_filepaths()?;
+            let records = filepaths
+                .iter()
+                .flat_map(|filepath| Loader::read_file(filepath))
+                .flatten()
+                .collect::<Vec<Record<BufferedBody>>>();
             Loader::insert_records(records, output)?;
         }
 
