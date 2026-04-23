@@ -40,10 +40,14 @@ impl VTab for ReadWarcVTab {
     type BindData = ReadWarcBindData;
 
     fn bind(bind: &BindInfo) -> Result<Self::BindData, Box<dyn Error>> {
-        WARC_FIELDS.iter().for_each(|field| {
+        bind.add_result_column(
+            "record_index",
+            LogicalTypeHandle::from(LogicalTypeId::Integer),
+        );
+        for field in WARC_FIELDS.iter() {
             let field_type_handle = field.get_field_type_handle();
-            bind.add_result_column(field.name, field_type_handle)
-        });
+            bind.add_result_column(field.name, field_type_handle);
+        }
         bind.add_result_column("body", LogicalTypeHandle::from(LogicalTypeId::Blob));
 
         let filepath = bind.get_parameter(0).to_string();
@@ -67,7 +71,7 @@ impl VTab for ReadWarcVTab {
             output.set_len(0);
         } else {
             let loader = Loader {
-                pattern: &bind_data.filepath,
+                pattern: bind_data.filepath.clone(),
             };
             let filepaths = loader.parse_filepaths()?;
             let records = filepaths

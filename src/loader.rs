@@ -9,17 +9,17 @@ use warc::{BufferedBody, Error as WarcError, Record, WarcReader};
 
 use crate::schema::WARC_FIELDS;
 
-pub struct Loader<'a> {
-    pub pattern: &'a String,
+pub struct Loader {
+    pub pattern: String,
 }
 
-impl<'a> Loader<'a> {
+impl Loader {
     pub fn parse_filepaths(&self) -> Result<Vec<PathBuf>, Box<dyn Error>> {
-        let filepaths = match self.pattern {
-            pattern if pattern.contains(|char| "*?[".contains(char)) => glob(pattern)?
+        let filepaths = match &self.pattern {
+            pattern if pattern.contains(|char| "*?[".contains(char)) => glob(&pattern)?
                 .filter_map(Result::ok)
                 .collect::<Vec<PathBuf>>(),
-            _ => vec![PathBuf::from(self.pattern)],
+            _ => vec![PathBuf::from(&self.pattern)],
         };
 
         Ok(filepaths)
@@ -43,8 +43,12 @@ impl<'a> Loader<'a> {
         output: &mut DataChunkHandle,
     ) -> Result<(), Box<dyn Error>> {
         for (record_index, record) in records.iter().enumerate() {
+            let mut index_vector = output.flat_vector(0);
+            let index_slice = index_vector.as_mut_slice::<u32>();
+            index_slice[record_index] = record_index as u32;
+
             for (field_index, field) in WARC_FIELDS.iter().enumerate() {
-                let mut column_vector = output.flat_vector(field_index);
+                let mut column_vector = output.flat_vector(field_index + 1);
                 match record.header(field.header.clone()) {
                     Some(value) => match field.field_type {
                         LogicalTypeId::Varchar => {
@@ -68,7 +72,7 @@ impl<'a> Loader<'a> {
                     }
                 }
             }
-            let body_vector = output.flat_vector(WARC_FIELDS.len());
+            let body_vector = output.flat_vector(WARC_FIELDS.len() + 1);
             body_vector.insert(record_index, record.body());
             output.set_len(records.len());
         }
