@@ -8,17 +8,17 @@
 pub mod loader;
 pub mod schema;
 
+use std::{
+    error::Error,
+    sync::atomic::{AtomicBool, Ordering},
+};
+
 use duckdb::{
     core::{DataChunkHandle, LogicalTypeHandle, LogicalTypeId},
     duckdb_entrypoint_c_api,
     vtab::{BindInfo, InitInfo, TableFunctionInfo, VTab},
     Connection, Result,
 };
-use std::{
-    error::Error,
-    sync::atomic::{AtomicBool, Ordering},
-};
-use warc::{BufferedBody, Record};
 
 use crate::loader::Loader;
 use crate::schema::WARC_FIELDS;
