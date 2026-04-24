@@ -21,14 +21,20 @@ const BUF_CAPACITY: usize = 1_000_000;
 pub enum Source {
     Local(String),
     #[cfg(feature = "http")]
-    Remote(String),
+    Http(String),
+    #[cfg(feature = "s3")]
+    S3(String),
 }
 
 impl Source {
     pub fn parse(path: &str) -> Self {
+        #[cfg(feature = "s3")]
+        if path.starts_with("s3://") {
+            return Source::S3(path.to_owned());
+        }
         #[cfg(feature = "http")]
         if path.starts_with("http://") || path.starts_with("https://") {
-            return Source::Remote(path.to_owned());
+            return Source::Http(path.to_owned());
         }
         Source::Local(path.to_owned())
     }
@@ -79,8 +85,13 @@ impl Loader {
                     .collect()
             }
             #[cfg(feature = "http")]
-            Source::Remote(url) => {
-                let reader = Self::read_remote(url)?;
+            Source::Http(url) => {
+                let reader = Self::read_http(url)?;
+                Ok(vec![(url.clone(), reader)])
+            }
+            #[cfg(feature = "s3")]
+            Source::S3(url) => {
+                let reader = Self::read_s3(url)?;
                 Ok(vec![(url.clone(), reader)])
             }
         }
@@ -101,11 +112,42 @@ impl Loader {
     }
 
     #[cfg(feature = "http")]
-    fn read_remote(url: &str) -> Result<WarcReader<Box<dyn BufRead>>, Box<dyn Error>> {
+    fn read_http(url: &str) -> Result<WarcReader<Box<dyn BufRead>>, Box<dyn Error>> {
         let response = ureq::get(url).call().map_err(|e| format!("{url}: {e}"))?;
         let body = response.into_body().into_reader();
         let path = url::Url::parse(url)?.path().to_owned();
         let buf_read = Compression::detect(&path).wrap_reader(body);
+        Ok(WarcReader::new(buf_read))
+    }
+
+    #[cfg(feature = "s3")]
+    fn extract_s3_bucket_and_key(url: &str) -> Result<(String, String), Box<dyn Error>> {
+        let path = url.strip_prefix("s3://").ok_or("invalid S3 URL")?;
+        let (bucket, key) = path.split_once('/').ok_or("S3 URL must include a key")?;
+        Ok((bucket.to_owned(), key.to_owned()))
+    }
+
+    #[cfg(feature = "s3")]
+    fn read_s3(s3_url: &str) -> Result<WarcReader<Box<dyn BufRead>>, Box<dyn Error>> {
+        let (bucket_name, key) = Self::extract_s3_bucket_and_key(s3_url)?;
+
+        let region = std::env::var("AWS_REGION")
+            .or_else(|_| std::env::var("AWS_DEFAULT_REGION"))
+            .unwrap_or_else(|_| "us-east-1".to_string())
+            .parse()?;
+        let credentials = s3::creds::Credentials::default()?;
+        let bucket = s3::Bucket::new(&bucket_name, region, credentials)?;
+
+        let compression = Compression::detect(&key);
+        let (reader, mut writer) = std::io::pipe()?;
+        let s3_url_owned = s3_url.to_owned();
+        std::thread::spawn(move || {
+            if let Err(e) = bucket.get_object_to_writer(&key, &mut writer) {
+                eprintln!("S3 download error for {s3_url_owned}: {e}");
+            }
+        });
+
+        let buf_read = compression.wrap_reader(reader);
         Ok(WarcReader::new(buf_read))
     }
 
