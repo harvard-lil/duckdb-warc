@@ -40,6 +40,7 @@ impl VTab for ReadWarcVTab {
     type BindData = ReadWarcBindData;
 
     fn bind(bind: &BindInfo) -> Result<Self::BindData, Box<dyn Error>> {
+        bind.add_result_column("filepath", LogicalTypeHandle::from(LogicalTypeId::Varchar));
         bind.add_result_column(
             "record_index",
             LogicalTypeHandle::from(LogicalTypeId::Integer),
@@ -74,12 +75,14 @@ impl VTab for ReadWarcVTab {
                 pattern: bind_data.filepath.clone(),
             };
             let filepaths = loader.parse_filepaths()?;
-            let records = filepaths
-                .iter()
-                .flat_map(|filepath| Loader::read_file(filepath))
-                .flatten()
-                .collect::<Vec<Record<BufferedBody>>>();
-            Loader::insert_records(records, output)?;
+            let mut row_offset: usize = 0;
+            for filepath in &filepaths {
+                let records = Loader::read_file(filepath)?;
+                let filepath_str = filepath.to_string_lossy().to_string();
+                Loader::insert_records(&filepath_str, &records, output, row_offset)?;
+                row_offset += records.len();
+            }
+            output.set_len(row_offset);
         }
 
         Ok(())
