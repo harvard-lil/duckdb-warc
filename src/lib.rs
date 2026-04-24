@@ -77,10 +77,22 @@ impl VTab for ReadWarcVTab {
             let filepaths = loader.parse_filepaths()?;
             let mut row_offset: usize = 0;
             for filepath in &filepaths {
-                let records = Loader::read_file(filepath)?;
                 let filepath_str = filepath.to_string_lossy().to_string();
-                Loader::insert_records(&filepath_str, &records, output, row_offset)?;
-                row_offset += records.len();
+                let mut reader = Loader::open_reader(filepath)?;
+                let mut stream = reader.stream_records();
+                let mut record_index: usize = 0;
+                while let Some(result) = stream.next_item() {
+                    let record = result?.into_buffered()?;
+                    Loader::insert_record(
+                        &filepath_str,
+                        &record,
+                        record_index,
+                        output,
+                        row_offset,
+                    )?;
+                    record_index += 1;
+                    row_offset += 1;
+                }
             }
             output.set_len(row_offset);
         }

@@ -570,6 +570,7 @@ name = "duckdb-warc"
 version = "0.1.0"
 dependencies = [
  "duckdb",
+ "flate2",
  "glob",
  "jiff",
  "warc",
