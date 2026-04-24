@@ -11,8 +11,7 @@ lto = true
 strip = true
 
 [dependencies]
-duckdb = { version = "=1.4.4", features = ["vtab-loadable"] }
+duckdb = { version = "=1.10502.0", features = ["loadable-extension"] }
 glob = "0.3.3"
 jiff = "0.2.16"
-libduckdb-sys = { version = "=1.4.4", features = ["loadable-extension"] }
 warc = "=0.3.3"
