@@ -10,9 +10,15 @@ crate-type = ["cdylib"]
 lto = true
 strip = true
 
+[features]
+default = ["http"]
+http = ["ureq", "url"]
+
 [dependencies]
 duckdb = { version = "=1.10502.0", features = ["loadable-extension"] }
+flate2 = "1"
 glob = "0.3.3"
 jiff = "0.2.16"
-flate2 = "1"
+ureq = { version = "3", optional = true }
+url = { version = "2", optional = true }
 warc = "=0.3.3"

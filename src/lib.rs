@@ -20,7 +20,7 @@ use duckdb::{
     Connection, Result,
 };
 
-use crate::loader::Loader;
+use crate::loader::{Loader, Source};
 use crate::schema::WARC_FIELDS;
 
 #[repr(C)]
@@ -40,7 +40,10 @@ impl VTab for ReadWarcVTab {
     type BindData = ReadWarcBindData;
 
     fn bind(bind: &BindInfo) -> Result<Self::BindData, Box<dyn Error>> {
-        bind.add_result_column("filepath", LogicalTypeHandle::from(LogicalTypeId::Varchar));
+        bind.add_result_column(
+            "record_source",
+            LogicalTypeHandle::from(LogicalTypeId::Varchar),
+        );
         bind.add_result_column(
             "record_index",
             LogicalTypeHandle::from(LogicalTypeId::Integer),
@@ -72,24 +75,16 @@ impl VTab for ReadWarcVTab {
             output.set_len(0);
         } else {
             let loader = Loader {
-                pattern: bind_data.filepath.clone(),
+                source: Source::parse(&bind_data.filepath),
             };
-            let filepaths = loader.parse_filepaths()?;
+            let sources = loader.resolve_sources()?;
             let mut row_offset: usize = 0;
-            for filepath in &filepaths {
-                let filepath_str = filepath.to_string_lossy().to_string();
-                let mut reader = Loader::open_reader(filepath)?;
+            for (label, mut reader) in sources {
                 let mut stream = reader.stream_records();
                 let mut record_index: usize = 0;
                 while let Some(result) = stream.next_item() {
                     let record = result?.into_buffered()?;
-                    Loader::insert_record(
-                        &filepath_str,
-                        &record,
-                        record_index,
-                        output,
-                        row_offset,
-                    )?;
+                    Loader::insert_record(&label, record_index, &record, output, row_offset)?;
                     record_index += 1;
                     row_offset += 1;
                 }
